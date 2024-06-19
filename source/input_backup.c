@@ -1505,13 +1505,13 @@ int input_read_parameters(
   class_test(pth->annihilation>0. && pth->annihilation_cross_section >0.,errmsg,
     "You gave both boost factor and annihilation parameter, please enter only one.");
 
-  if(pth->DM_mass > 0 && pth->annihilation_cross_section >0.&&pth->PBH_spiked_mass > 0. ){
+  if(pth->DM_mass > 0 && pth->annihilation_cross_section >0.){
       double conversion = 1.78*pow(10,-21); // Conversion GeV => Kg
       class_test(pth->DM_mass<=0.,errmsg,
         "You need to enter a mass for your dark matter particle 'm_DM > 0.' (in GeV).");
       pth->annihilation = pth->annihilation_cross_section/(pth->DM_mass*conversion);
       if(input_verbose > 0)
-        fprintf(stdout,"You gave m_DM = %.2e, PBH mass =%.2e and cross_section = %.2e. Your parameter annihilation = %.2e. \n",pth->DM_mass,pth->PBH_spiked_mass,pth->annihilation_cross_section, pth->annihilation);
+        fprintf(stdout,"You gave m_DM = %.2e and cross_section = %.2e. Your parameter annihilation = %.2e. \n",pth->DM_mass,pth->annihilation_cross_section, pth->annihilation);
   }
 
 
@@ -1521,10 +1521,12 @@ int input_read_parameters(
   }
 
 
-/* */
+
   if (pth->PBH_spiked_mass > 0.){
     class_read_int("PBH_spike_profiles",pth->PBH_spike_profiles);
 
+
+    // options for the computation of the J-factor
 
     class_call(parser_read_string(pfc,"J_factors",&string1,&flag1,errmsg),
                errmsg,
@@ -1533,10 +1535,6 @@ int input_read_parameters(
     if (flag1 == _TRUE_){
       flag2 = _FALSE_;
       if (strcmp(string1,"from_file") == 0) {
-        pth->J_factor_from_file=1;
-
-        fprintf(stdout," pth->J_factor_from_file is %d \n", pth->J_factor_from_file );
-
         class_call(parser_read_string(pfc,"J_factors_file",&string1,&flag1,errmsg),
                    errmsg,
                    errmsg);
@@ -1549,30 +1547,16 @@ int input_read_parameters(
         }
         flag2=_TRUE_;
       }
-
-      if (strcmp(string1,"core_only") == 0) {
-        pth->core_only_spikes=1;
-
-        if(pth->PBH_spike_profiles==2 ){ //based on analytic expression, only available for Carr profiles
-          flag2=_TRUE_;
-        }
-        else {
-          class_test(pth->PBH_spike_profiles==1,errmsg,
-            "Sorry, the analytical core-only computation is not implemented yet for these profiles. Please use the J factors from table. ");
-        }
-
-
-      }
-
-
       class_test(flag2==_FALSE_,errmsg,
-        "Could not identify J-factor computation method, check that it is 'from_file' or core_only (available for Carr profiles only)");
+        "Could not identify J-factor computation method, check that it is 'from_file'");
 
         if(input_verbose > 0)
           fprintf(stdout,"The J-factors will be interpolated from the file  %s\n",pth->J_factors_spike_file);
 
 
     }
+
+
 
   }
 
@@ -1785,12 +1769,13 @@ int input_read_parameters(
         /* Check first if injection history is standard and already implemented */
 
 
-        /*FRANCESCA Implement new automatic command here.
+        /*
  (choose from 'annihilation', 'annihilation_halos', 'decay', 'evaporating_PBH', 'accreting_PBH')
 
         /* Automatic comand for annihilation without halo boost*/
 
         if(pth->annihilation > 0 && pth->annihilation_f_halo == 0 && pth->PBH_spike_profiles == 0){
+
           strcat(ppr->command_fz,"/DarkAgesModule/bin/DarkAges --hist=annihilation --spectrum ");
           sprintf(string2,"");
           class_call(parser_read_string(pfc,"injected_particle_spectra",&string2,&flag1,errmsg),
@@ -1810,6 +1795,9 @@ int input_read_parameters(
           strcat(ppr->command_fz," --mass=");
           sprintf(string2,"%g",pth->DM_mass);
           strcat(ppr->command_fz,string2);
+
+
+
         }
 
 
@@ -1845,6 +1833,9 @@ int input_read_parameters(
           sprintf(string2,"%g",pth->annihilation_z_halo);
           strcat(ppr->command_fz,string2);
         }
+
+
+        /** - Automatic command for energy injection form DM spikes around PBHs */
 
 
         else if(pth->annihilation > 0 && pth->PBH_spike_profiles > 0){
@@ -3796,9 +3787,11 @@ int input_default_params(
   pth->DM_mass = 0;
   pth->decay_fraction = 0.;
 
-  pth->PBH_spiked_mass = 0.;  //FRANCESCA
-  pth->PBH_spike_profiles = 0.;
-  pth->core_only_spikes= 0.;
+  pth->PBH_spiked_mass = 0;  //FRANCESCA
+  pth->PBH_spike_profiles = 0;
+  sprintf(pth->J_factors_spike_file,__CLASSDIR__);
+  //strcat(ppr->energy_injec_coeff_file,"/DarkAgesModule/GSVI_file.dat");
+  fprintf(stdout,"pth->J_factors_spike_file is %s\n",pth->J_factors_spike_file);
 
   pth->PBH_accreting_mass = 0.;
   pth->PBH_evaporating_mass = 0.;
@@ -4093,6 +4086,9 @@ int input_default_precision ( struct precision * ppr ) {
   strcat(ppr->energy_injec_coeff_file,"/DarkAgesModule/GSVI_file.dat"); //Default correspond to the GSVI case
   sprintf(ppr->energy_injec_f_eff_file,__CLASSDIR__);
   strcat(ppr->energy_injec_f_eff_file,"/EnergyInjection_example_file_type1.dat");
+
+  /* For PBH spikes*/
+  //sprintf(ppr->J_factors_spike_file,__CLASSDIR__);
 
   /* BEGIN: Initializing the parameters related to using an external code for the calculation of f(z) */
   ppr->fz_is_extern = _FALSE_;

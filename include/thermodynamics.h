@@ -227,6 +227,18 @@ double * reio_inter_xe; /**< discrete \f$ X_e(z)\f$ values */
   * Note that the DM lifetime is defined in the background module
   */
   double annihilation; /** parameter describing CDM annihilation (f <sigma*v> / m_cdm, see e.g. 0905.0003) */
+
+  ///////////  PBH DM spikes////////////
+  double PBH_spiked_mass; /** */
+  int PBH_spike_profiles; /*  change spike profiles */
+  int core_only_spikes;  /* ask for core only approximation */
+
+  FileName J_factors_spike_file;
+
+  int J_factor_from_file;
+
+
+
   double annihilation_cross_section;
   double DM_mass;
   double annihilation_variation; /** if this parameter is non-zero,
@@ -484,6 +496,30 @@ struct recombination {
   /* parameters for energy injection */
 
   double annihilation; /**< parameter describing CDM annihilation (f <sigma*v> / m_cdm, see e.g. 0905.0003) */
+
+  ///////////////////PBH DM spikes////////////////////////////////
+  double PBH_spiked_mass; /** PBH mass for DM annihilation in spikes*/
+  int PBH_spike_profiles; /*  change spike profiles */
+  int core_only_spikes;  /* ask for core only approximation */
+  double annihilation_cross_section;
+  double DM_mass;
+
+  /*variables to read and iterpolate the tables for DM spikes */
+  double * rho_max_values;
+  double * J_factor_values;
+  double * J_factor_dd_values;
+
+  double J_factor;
+  int rho_max_num_lines;
+
+  double  max_rho_max;
+  double  min_rho_max;
+  double  max_J_factor;
+
+  int J_factor_from_file;
+
+
+
   double annihilation_boost_factor;/**< alternative parameterization to annihilation parameter, describes the boost factor to annihilation cross section */
   double annihilation_m_DM; /**< in case of alternative parameterization to annihilation parameter, describes the mass of the dark matter */
 
@@ -722,6 +758,7 @@ extern "C" {
   int thermodynamics_annihilation_coefficients_free(
                                                    struct thermo * pth
                                                  );
+
   int thermodynamics_annihilation_f_eff_init(
                                                    struct precision * ppr,
                                                    struct background * pba,
@@ -737,7 +774,28 @@ extern "C" {
                                                   );
   int thermodynamics_annihilation_f_eff_free(
                                                   struct recombination * preco
-                                                );
+
+                                              );
+
+  int PBH_DMspikes_Jfactor_init(
+                                                struct precision * ppr,
+                                                struct background * pba,
+                                                struct thermo * pth,
+                                                struct recombination * preco
+                                              );
+  int PBH_DMspikes_Jfactor_interpolate(
+                                                 struct precision * ppr,
+                                                 struct background * pba,
+                                                 struct recombination * preco,
+                                                 double rhomax,
+                                                 ErrorMsg error_message
+                                               );
+
+
+
+
+
+
   int thermodynamics_onthespot_energy_injection(
 				      struct precision * ppr,
 				      struct background * pba,
@@ -997,5 +1055,11 @@ extern "C" {
 #define _Z_REC_MIN_ 500.
 
 //@}
+
+#define _M_SUN_ 1.98847e30 /**< Solar mass in Kg */
+#define _M_PL_GEV_ 1.221e19 // GeV
+//#define _M_PL_ 2.1764 *pow(10,-8) // kg
+
+
 
 #endif

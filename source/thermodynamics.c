@@ -267,6 +267,8 @@ int thermodynamics_init(
                         struct thermo * pth
                         ) {
 
+
+
   /** Summary: */
 
   /** - define local variables */
@@ -350,6 +352,18 @@ int thermodynamics_init(
       }
     }
   }
+
+/* Initialize the J-factor table for DM annihilation in PBH spikes*/
+
+
+if(pth->PBH_spiked_mass > 0 ){
+
+  class_call(PBH_DMspikes_Jfactor_init(ppr,pba,pth,preco),
+             pth->error_message,
+             pth->error_message);
+}
+
+
 
   /** - check energy injection parameters */
 
@@ -1305,6 +1319,8 @@ int thermodynamics_annihilation_coefficients_init(
   int num_lines=0;
   int array_line=0;
 
+
+
   /*
 
       the following file is assumed to contain (apart from comments and blank lines):
@@ -1332,10 +1348,13 @@ int thermodynamics_annihilation_coefficients_init(
 
   /* END */
 
+
   /* go through each line */
   while (fgets(line,_LINE_LENGTH_MAX_-1,fA) != NULL) {
     /* eliminate blank spaces at beginning of line */
     left=line;
+    //printf(" current line is %s \n", line );
+
     while (left[0]==' ') {
       left++;
     }
@@ -1352,6 +1371,9 @@ int thermodynamics_annihilation_coefficients_init(
       if (num_lines == 0) {
 
         /* read num_lines, infer size of arrays and allocate them */
+
+        //printf(" the number of lines is %s \n", line );
+
         class_test(sscanf(line,"%d",&num_lines) != 1,
                    pth->error_message,
                    "could not read value of parameters num_lines in file %s\n",ppr->energy_injec_coeff_file);
@@ -1585,6 +1607,8 @@ int thermodynamics_annihilation_f_eff_init(
   int num_lines=0;
   int array_line=0;
 
+  printf(" hee \n");
+
   /*
 
       the following file (or output of DarkAges) is assumed to contain (apart from comments and blank lines):
@@ -1608,6 +1632,7 @@ int thermodynamics_annihilation_f_eff_init(
 
     /* eliminate blank spaces at beginning of line */
     left=line;
+
     while (left[0]==' ') {
       left++;
     }
@@ -1729,8 +1754,154 @@ int thermodynamics_annihilation_f_eff_free(
  * @return the error status
  */
 
+
+
 /**********************************************************************************************/
 /******************************Energy Injection DM annihilation**********************************/
+
+/************/
+
+/********************** Implementation by FS for DM spikes around PBHs *************************************/
+
+/********************** Define functions to read and interpolate J-factors from file *************************************/
+
+
+int PBH_DMspikes_Jfactor_init(
+                                                  struct precision * ppr,
+                                                  struct background * pba,
+                                                  struct thermo * pth,
+                                                  struct recombination * preco
+                                                  ) {
+
+  FILE * fA;
+  char line[_LINE_LENGTH_MAX_];
+  char * left;
+
+  int num_lines=0;
+  int array_line=0;
+
+
+  /*
+
+      the following file (or output of DarkAges) is assumed to contain (apart from comments and blank lines):
+     - One number (num_lines) = number of lines of the file
+     - One column (z , f(z)) where f(z) represents the "effective" fraction of energy deposited into the medium at redshift z, in presence of halo formation.
+
+  */
+
+  class_open(fA,pth->J_factors_spike_file , "r",pth->error_message);
+  if (pth->thermodynamics_verbose > 0) {
+    printf("Reading file : %s\n", pth->J_factors_spike_file);
+  }
+
+  /* go through each line */
+  while (fgets(line,_LINE_LENGTH_MAX_-1,fA) != NULL) {
+
+    /* eliminate blank spaces at beginning of line */
+    left=line;
+    //printf(" current line is %s \n", line );
+    while (left[0]==' ') {
+      left++;
+    }
+
+    /* check that the line is neither blank nor a comment. In
+       ASCII, left[0]>39 means that first non-blank charachter might
+       be the beginning of some data (it is not a newline, a #, a %,
+       etc.) */
+    if (left[0] > 39) {
+
+      /* if the line contains data, we must interprete it. If
+         num_lines == 0 , the current line must contain
+         its value. Otherwise, it must contain (xe , chi_heat, chi_Lya, chi_H, chi_He, chi_lowE). */
+      if (num_lines == 0) {
+
+        /* read num_lines, infer size of arrays and allocate them */
+        class_test(sscanf(line,"%d",&num_lines) != 1,
+                   pth->error_message,
+                   "could not read value of parameters num_lines in file %s\n",pth->J_factors_spike_file );
+        class_alloc(preco->rho_max_values,num_lines*sizeof(double),pth->error_message);
+        class_alloc(preco->J_factor_values,num_lines*sizeof(double),pth->error_message);
+
+        class_alloc(preco->J_factor_dd_values,num_lines*sizeof(double),pth->error_message);
+
+        preco->rho_max_num_lines = num_lines;
+
+
+        array_line=0;
+
+
+      }
+      else {
+
+        /* read coefficients */
+        class_test(sscanf(line,"%lg %lg",
+                          &(preco->rho_max_values[array_line]),
+                          &(preco->J_factor_values[array_line]))!= 2,
+                   pth->error_message,
+                   "could not read value of parameters coefficients in file %s\n",pth->J_factors_spike_file);
+        array_line ++;
+      }
+    }
+  }
+
+    fclose(fA);
+
+    preco->max_rho_max= preco->rho_max_values[0];
+    preco->min_rho_max= preco->rho_max_values[num_lines-1];
+    preco->max_J_factor=preco->J_factor_values[0];
+
+
+    //printf(" the max rhomax is  %e and the minimum is %e \n", preco->rho_max_values[0], preco->rho_max_values[num_lines-1] );
+    printf("File read. max_rhomax is  %e g/cm^3, min_rhomax  is %e g/cm^3 and max_Jfactor is %e g^2/cm^3 \n", preco->max_rho_max, preco->min_rho_max, preco->max_J_factor  );
+
+  /* spline in one dimension */
+  class_call(array_spline_table_lines(preco->rho_max_values,
+                                      preco->rho_max_num_lines,
+                                      preco->J_factor_values,
+                                      1,
+                                      preco->J_factor_dd_values,
+                                      _SPLINE_NATURAL_,
+                                      pth->error_message),
+             pth->error_message,
+             pth->error_message);
+
+  return _SUCCESS_;
+
+}
+
+
+int PBH_DMspikes_Jfactor_interpolate(
+                                                  struct precision * ppr,
+                                                  struct background * pba,
+                                                  struct recombination * preco,
+                                                  double rhomax,
+                                                  ErrorMsg error_message
+                                                ) {
+
+  int last_index;
+  class_call(array_interpolate_spline(preco->rho_max_values,
+                                      preco->rho_max_num_lines,
+                                      preco->J_factor_values,
+                                      preco->J_factor_dd_values,
+                                      1,
+                                      rhomax,
+                                      &last_index,
+                                      &(preco->J_factor),
+                                      1,
+                                      error_message),
+             error_message,
+             error_message);
+
+
+  return _SUCCESS_;
+
+}
+
+
+
+
+
+
 int thermodynamics_DM_annihilation_energy_injection(
                                                   struct precision * ppr,
                                                   struct background * pba,
@@ -1740,20 +1911,317 @@ int thermodynamics_DM_annihilation_energy_injection(
                                                   ErrorMsg error_message
                                                 ){
 
-  double rho_cdm_today;
+  double rho_cdm_today, rho_cdm_today_kg, rhoDM_eq  ;
+
   double Boost_factor;
+  double J_factor_core=0;
+
+
+
+  double tau;
+  int last_index_back;
+  double * pvecback;
+  class_alloc(pvecback,pba->bg_size*sizeof(double),pba->error_message);
+
+
+    class_call(background_tau_of_z(pba,
+                                   z,
+                                   &tau),
+               pba->error_message,
+               ppr->error_message);
+
+    class_call(background_at_tau(pba,
+                                 tau,
+                                 pba->long_info,
+                                 pba->inter_normal,
+                                 &last_index_back,
+                                 pvecback),
+               pba->error_message,
+               ppr->error_message);
+
+
+
+
+  if(preco->annihilation_f_halo>0.){
+
+  Boost_factor = preco->annihilation_f_halo*erfc((1+z)/(1+preco->annihilation_z_halo))/pow(1+z,3);
+
+  }
+
+
+  //////////////////////////*Boost factor for annihilation in DM spikes by F Scarcella*///////////////////////////////////////
+
+  else if(preco->PBH_spike_profiles>0){
+    // 1 for us, 2 for Carr
+
+
 
   rho_cdm_today = pow(pba->H0*_c_/_Mpc_over_m_,2)*3/8./_PI_/_G_*(pba->Omega0_cdm)*_c_*_c_; /* energy density in J/m^3 */
+  rho_cdm_today_kg = pow(pba->H0*_c_/_Mpc_over_m_,2)*3/8./_PI_/_G_*(pba->Omega0_cdm);
 
-  if(preco->annihilation_z_halo>0.){
-  Boost_factor = preco->annihilation_f_halo*erfc((1+z)/(1+preco->annihilation_z_halo))/pow(1+z,3);
+
+  double time_now, rho_max_now;
+
+  rho_max_now=0;
+
+  time_now = pvecback[pba->index_bg_time]/(_c_ / _Mpc_over_m_); //in seconds
+
+  //printf("the DM mass is %e GeV, the cross section is %e cm^3/s", preco->DM_mass, preco->annihilation_cross_section);
+
+
+  // to get rho max in kg/m^3: convert DM mass from GeV to kg , cross section from cm^3/s to m^3/2; age of the universe already in seconds
+  rho_max_now= (preco->DM_mass * 1.602 * pow(10,-10) /pow(_c_ , 2)) / (preco->annihilation_cross_section * pow(10, -6))/time_now;
+
+  //printf(" time now is %e and rho_max is %e \n",time_now, rho_max_now );
+  //printf(" max_rho_max is %e min_rho_max is %e and rho_max is %e \n", preco->max_rho_max, preco->min_rho_max, rho_max_now );
+  //printf(" time now is %e and rho_max is %e \n",time_now, rho_max_now );
+
+  //fprintf(stdout," preco->J_factor_from_file is %d \n", preco->J_factor_from_file );
+
+
+  /*computing the J factor from file*/
+  if(preco->J_factor_from_file==1 ){
+
+    //printf("Computing Jfactor from file");
+
+    if(preco->max_rho_max< rho_max_now){
+      preco->J_factor =preco->max_J_factor;
+      //printf(" rho_max is very high: rhomax= e% > max_rho_max= %e \n",rho_max_now, preco->max_rho_max );
+          }
+    else if(preco->min_rho_max>rho_max_now){
+      preco->J_factor =0.;
+      //printf(" rho_max is very low: rhomax= e% < %e min_rho_max= \n",rho_max_now, preco->min_rho_max   );
+          }
+    else if (preco->min_rho_max<=rho_max_now&&rho_max_now<=preco->max_rho_max){
+
+      //printf(" rho_max is intermediate: min_rho_max= %e < rhomax= %e < max_rho_max= %e \n",preco->min_rho_max , rho_max_now, preco->max_rho_max  );
+
+      //The tables contain values of rhomax in g/cm^3, convert rhomax before interpolating
+      class_call(PBH_DMspikes_Jfactor_interpolate(ppr,pba,preco,rho_max_now*pow(10,-3),error_message),
+            error_message,
+            error_message);
+          }
+      //this returns the J-factor in g^2/cm^3 = kg^2/m^3 so I don't need to convert it.
+
+    //printf(" The J-factor is %e and rho max is %e kg/m^3\n",preco->J_factor, rho_max_now);
+
+    //printf(" time in seconds is %e, z=%e, the interpolated J-factor is %e g^2/cm^-3\n",time_now, z, preco->J_factor);
+
   }
-  else Boost_factor = 0;
 
+
+
+
+
+  else if(preco->J_factor_from_file==0 && preco->PBH_spike_profiles==2 && preco->core_only_spikes==1){
+
+
+   ////Can I get this from code?
+   double z_eq, t_eq;
+
+   z_eq = 3375.0;
+   t_eq = 51000*3.154* pow(10,7)  ;   //in seconds
+
+
+  //double omega_CDM= 0.259;    //pba->Omega0_cdm  should be the DM density today
+   //double rho_c= 9* pow(10,-27) ; // kg/m^3
+
+   // double rhoDM_eq= omega_CDM* rho_c * pow(1 + z_eq,3);  // kg/m^3
+
+   //double t = pba->age *3.154* pow(10,16) ;   // in seconds;  pba->age is the age in Gyears
+
+
+
+
+  //printf("z %e time_now %e  rho_max %e  \n", z,  time_now, rho_max);
+
+
+  rhoDM_eq=  rho_cdm_today_kg*pow(1 + z_eq, 3);  // kg/m^3
+
+
+
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /////////////////////////// SPIKE profile from Carr et al. 2011.01930 //////////////////////////////////
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  double  Temp_kinetic_dec, t_kinetic_dec, z_kinetic_dec, rhoDM_kinetic_dec;
+  double  r_S, r_C, r_K, r_tilde, r_bar;
+  double  x_KD;
+
+
+
+  double g_eff_KD = 61.75;    // from 2011.01930
+  double alpha = sqrt(16*pow(_PI_,3)*g_eff_KD/45) ;
+
+
+
+   Temp_kinetic_dec = preco->DM_mass/1.22542 * pow(alpha * preco->DM_mass/_M_PL_GEV_ , 0.25); //DM_mass in GeV -> T in GeV
+
+   x_KD= preco->DM_mass/Temp_kinetic_dec ;   //dimensionless; is close to 10^4
+
+
+   t_kinetic_dec =  2.4/sqrt(g_eff_KD) * pow(Temp_kinetic_dec*1000,-2);  // seconds
+   z_kinetic_dec= (1 + z_eq)* sqrt(t_eq/t_kinetic_dec) - 1;
+   rhoDM_kinetic_dec= rho_cdm_today_kg * pow(1 + z_kinetic_dec,3);  // kg/m^3
+
+
+
+   ///////define the characteristic radii///////////////
+
+
+
+   r_S= 2* _G_* preco->PBH_spiked_mass*_M_SUN_/ pow(_c_,2);  //Schwarzchild radius
+
+   r_bar=  pow(2*_G_*_M_SUN_*pow(t_eq,2), 1./3.) ;   // meters
+
+   r_tilde= _G_*_M_SUN_/pow(_c_,2) * t_eq/t_kinetic_dec * x_KD;
+
+   r_C= r_S/2 * x_KD;
+
+   r_K= 4* pow(_c_,2) * pow(t_kinetic_dec, 2)/r_S * pow(x_KD, -2);
+
+
+
+
+
+
+   //////////define the spike  profile///////////////
+
+
+
+    double r_table[]={r_S, r_C, r_K};
+    double rho_init[]={0,0,0};
+
+    //printf(" r_S %e  r_C %e  r_K %e \n",  r_S, r_C, r_K);
+    //printf(" rhoDM_eq %e  rhoDM_kinetic_dec %e \n", rhoDM_eq, rhoDM_kinetic_dec );
+
+    int i;
+
+    for (i=0; i<3; i++){
+
+      double rho ;
+      double r = r_table[i];
+
+
+      rho=0;
+
+      //printf(" looking at r  %e \n", r);
+
+      if (r>=r_S){
+
+        if (r >= r_K ){
+          rho= rhoDM_eq/2. * pow(preco->PBH_spiked_mass, 3./4.) * pow(r_bar/r, 9./4.) ;       //this is the profile beyond r_K
+          //printf(" hoo \n");
+        }
+        else if(r_C <= r < r_K ){
+          rho= rhoDM_eq/2. * pow(preco->PBH_spiked_mass, 3./2.) * pow(r_tilde/r, 3./2.) ;       //intermediate regime, only exists if rC< rK
+          //printf(" haa \n");
+        }
+        else if(r < r_C){
+          rho= rhoDM_kinetic_dec * pow(r_C/r, 3/4.) ;
+          //printf(" hii \n");
+        }
+        else rho=0;
+      }
+
+      rho_init[i]=rho;
+
+      //printf(" rho_init %e  i %d \n", rho_init[i], i );
+
+    }
+
+     ///////////////////////obtain the core radius after depletion through annihilation, by solving rho=rhomax//////////////////////////
+     double r_core= 0;
+     double rho_S = rho_init[0];
+     double rho_C = rho_init[1];
+     double rho_K= rho_init[2];
+
+     //printf(" r_S %e  r_C %e  r_K %e \n",  r_S, r_C, r_K);
+     //printf(" rho S %e  rho C %e  rho K %e \n",  rho_S , rho_C , rho_K);
+     //printf(" z is %e and rhomax is %e \n", z, rho_max );
+
+
+     if(r_S< r_K){
+
+       if(rho_K >= rho_max_now){
+
+         r_core = r_bar * pow(rhoDM_eq/rho_max_now/2., 4/9.) * pow(preco->PBH_spiked_mass, 1/3.);
+         //printf(" hoo \n");
+
+       }
+       else if (rho_C >= rho_max_now){
+
+         r_core = r_tilde * pow(rhoDM_eq/rho_max_now/2., 2/3.) * (preco->PBH_spiked_mass);
+         //printf(" hee \n");
+       }
+       else if (rho_S >= rho_max_now){
+
+         r_core = r_C * pow(rhoDM_kinetic_dec/rho_max_now, 4/3.) ;
+        // printf(" haa \n");
+       }
+       else r_core =0;
+       //printf(" hii \n");
+
+     }
+     else r_core = r_bar * pow(rhoDM_eq/rho_max_now/2., 4/9.) * pow(preco->PBH_spiked_mass, 1/3.);
+    // printf(" hoihoi \n");
+
+     //printf(" rcore is %e \n", r_core);
+
+
+  // double core_to_full_conversion= 3.;  /// VALID FOR GAMMA=9/4 AND RSPIKE >>RCORE
+
+
+    preco->J_factor= 4/3. *_PI_ * (pow(r_core, 3) - pow(r_S, 3)) * pow(rho_max_now, 2);
+
+
+
+}
+   ///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\\\\
+  ///!!!!!!!!!!!!!!!NOTE: for large fPBH the energy rate must go to zero! This is NOT ACCOUNTED FOR in the implementation through the boost factor!!!!!!!\\\\
+ ////!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\\\\
+
+    Boost_factor = preco->J_factor* preco->PBH_fraction /  (preco->PBH_spiked_mass * _M_SUN_ )/ (rho_cdm_today_kg * pow(1. + z ,3.));
+
+
+    printf("z=%e, Jfactor= %e , Boostfactor = %e \n",z, preco->J_factor, Boost_factor);
+
+    //printf("num=%e \n",preco->J_factor* preco->PBH_fraction);
+    //printf("den=%e \n",1/(preco->PBH_spiked_mass * _M_SUN_ )/ (rho_cdm_today_kg * pow(1. + z ,3.)));
+
+    //printf("rho=%e \n",rho_cdm_today_kg);
+
+    //printf("MPBH=%e \n",preco->PBH_spiked_mass);
+
+
+  }
+
+//////////////////////end of implentation by FS ///////////////////
+
+ else Boost_factor = 0;
+
+
+
+
+   //alternative way would be:
+  //*energy_rate = pow(rho_cdm_today_kg,2)*_c_*_c_*(pow((1.+z),6)*preco->annihilation)*(1+Boost_factor);
+  //printf("Boost_factor %e\n", Boost_factor);
   *energy_rate = pow(rho_cdm_today,2)/_c_/_c_*(pow((1.+z),6)*preco->annihilation)*(1+Boost_factor);
   /* energy density rate in J/m^3/s (remember that sigma_thermal/(preco->annihilation_m_DM*conversion) is in m^3/s/Kg) */
 
+
+
+
 }
+
+
+
+
+/********************** End of implementation for DM spikes around PBHs *************************************/
+
+
+
 /******************************Energy Injection DM decay**********************************/
 int thermodynamics_DM_decay_energy_injection(
                                                   struct precision * ppr,
@@ -1784,7 +2252,8 @@ int thermodynamics_DM_decay_energy_injection(
                                  pvecback),
                pba->error_message,
                ppr->error_message);
-     rho_dcdm = pvecback[pba->index_bg_rho_dcdm]*pow(_Mpc_over_m_,2)*3/8./_PI_/_G_*_c_*_c_; /* energy density in J/m^3 */
+
+     rho_dcdm = pvecback[pba->index_bg_rho_dcdm]*pow(_Mpc_over_m_,2)*3/8. ;  //_G_*_c_*_c_; /* energy density in J/m^3 */
      /* If uncommented, these lines allow to check approximation when computing the dcdm density with analytical results. Works very well until Omega_lambda dominates, then ~10% difference. */
     //  result_integrale = exp(-pba->Gamma_dcdm*2*((pba->Omega0_b+pba->Omega0_cdm)*pow(pba->Omega0_g+(pba->Omega0_b+pba->Omega0_cdm)/(1+z),0.5)
     //  +2*pow(pba->Omega0_g,1.5)*(1+z)-2*pba->Omega0_g*pow((1+z)*(pba->Omega0_g*(1+z)+(pba->Omega0_b+pba->Omega0_cdm)),0.5))/(3*pow((pba->Omega0_b+pba->Omega0_cdm),2)*(1+z)*pba->H0));
@@ -1821,6 +2290,8 @@ int thermodynamics_DM_decay_energy_injection(
 
 
 }
+
+
 int PBH_evaporating_mass_time_evolution(
                                   struct precision * ppr,
                                   struct background * pba,
@@ -2200,9 +2671,12 @@ int thermodynamics_onthespot_energy_injection(
                                               double * energy_rate,
                                               ErrorMsg error_message
                                               ) {
+
   //fprintf(stdout,"Level: >>thermodynamics_on_the_spot_energy_injection<<< | z = %e | energy rate (before) = %e |",z,*energy_rate);
+
+
   if(preco->annihilation > 0){
-    thermodynamics_DM_annihilation_energy_injection(ppr,pba,preco,z,energy_rate,error_message);
+    thermodynamics_DM_annihilation_energy_injection(ppr,pba,preco,z,energy_rate,error_message); //FRANCESCA added pth
   }
   if(preco->decay_fraction > 0.){
     thermodynamics_DM_decay_energy_injection(ppr,pba,preco,z,energy_rate,error_message);
@@ -2249,9 +2723,15 @@ int thermodynamics_energy_injection(
   double nH0;
   double onthespot;
   double exponent_z,exponent_zp;
-  if (preco->annihilation > 0 || preco->decay_fraction > 0 || preco->PBH_accreting_mass > 0 || preco->PBH_evaporating_mass > 0 ) {
+
+
+
+  if (preco->annihilation > 0 || preco->decay_fraction > 0 || preco->PBH_accreting_mass > 0 || preco->PBH_evaporating_mass > 0 || preco->PBH_spiked_mass > 0) {
     //fprintf(stdout,"Level >>thermodynamics_energy_injection<< | z = %e | energy rate = %e\n",z,*energy_rate);
+
+
     if (preco->has_on_the_spot == _FALSE_) {
+
 
 
       if(preco->energy_deposition_function == Analytical_approximation){
@@ -2314,6 +2794,7 @@ int thermodynamics_energy_injection(
       }
       // // /***********************************************************************************************************************/
       else if(preco->energy_deposition_function == DarkAges){
+
 
             class_call(thermodynamics_onthespot_energy_injection(ppr,pba,preco,z,&result,error_message),
                       error_message,
@@ -4088,11 +4569,20 @@ int thermodynamics_recombination_with_cosmorec(
   preco->Nnow = 3.*preco->H0*preco->H0*pba->Omega0_b*(1.-preco->YHe)/(8.*_PI_*_G_*_m_H_);
   /* energy injection parameters */
   preco->annihilation = pth->annihilation;
+
   preco->has_on_the_spot = pth->has_on_the_spot;
   preco->decay_fraction = pth->decay_fraction;
   preco->annihilation_f_halo = pth->annihilation_f_halo;
   preco->annihilation_z_halo = pth->annihilation_z_halo;
   pth->n_e=preco->Nnow;
+
+  preco->PBH_spiked_mass =pth->PBH_spiked_mass;   //FRANCESCA
+  preco->PBH_spike_profiles =pth->PBH_spike_profiles;
+  preco->core_only_spikes= pth->core_only_spikes;
+  preco->J_factor_from_file =pth->J_factor_from_file;
+
+  preco->annihilation_cross_section = pth->annihilation_cross_section;
+  preco->DM_mass = pth->DM_mass;
 
   /** - allocate memory for thermodynamics interpolation tables (size known in advance) and fill it */
 
@@ -4333,6 +4823,10 @@ class_stop(pth->error_message,
    preco->decay_fraction = pth->decay_fraction;
    preco->annihilation_f_halo = pth->annihilation_f_halo;
    preco->annihilation_z_halo = pth->annihilation_z_halo;
+   preco->PBH_spiked_mass =pth->PBH_spiked_mass;   //FRANCESCA
+   preco->PBH_spike_profiles =pth->PBH_spike_profiles;
+   preco->J_factor_from_file =pth->J_factor_from_file;
+   preco->core_only_spikes= pth->core_only_spikes;
    pth->n_e=preco->Nnow;
 
    /** - allocate memory for thermodynamics interpolation tables (size known in advance) and fill it */
@@ -4480,6 +4974,14 @@ int fill_recombination_structure(struct precision * ppr,
   preco->energy_repart_coefficient = pth->energy_repart_coefficient;
   preco->annihilation_f_halo = pth->annihilation_f_halo;
   preco->annihilation_z_halo = pth->annihilation_z_halo;
+  preco->PBH_spiked_mass =pth->PBH_spiked_mass;   //FRANCESCA
+  preco->PBH_spike_profiles =pth->PBH_spike_profiles;
+  preco->J_factor_from_file=pth->J_factor_from_file;
+  preco->core_only_spikes= pth->core_only_spikes;
+
+  preco->DM_mass =pth->DM_mass;
+  preco->annihilation_cross_section =pth->annihilation_cross_section;
+
   preco->f_eff = pth->f_eff;
 
   /* quantities related to constants defined in thermodynamics.h */

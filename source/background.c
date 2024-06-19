@@ -1,3 +1,4 @@
+
 /** @file background.c Documented background module
  *
  * * Julien Lesgourgues, 17.04.2011
